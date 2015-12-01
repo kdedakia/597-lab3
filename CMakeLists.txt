@@ -111,7 +111,7 @@ include_directories(
 # )
 
 ## Declare a cpp executable
-add_executable(turtlebot_example src/turtlebot_example.cpp)
+add_executable(prm src/prm.cpp)
 add_executable(sim_pose_publisher_node src/sim_pose_publisher.cpp)
 add_executable(vis_pose_publisher_node src/vis_pose_publisher.cpp)
 
@@ -126,7 +126,7 @@ add_executable(vis_pose_publisher_node src/vis_pose_publisher.cpp)
  target_link_libraries(sim_pose_publisher_node
    ${catkin_LIBRARIES}
  )
- target_link_libraries(turtlebot_example
+ target_link_libraries(prm
    ${catkin_LIBRARIES}
  )
 

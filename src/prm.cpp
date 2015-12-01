@@ -27,8 +27,77 @@ ros::Publisher marker_pub;
 #define TAGID 0
 #define nS 10 //Number of Samples
 
-//Callback function for the Position topic (LIVE)
+void draw_points(geometry_msgs::Point points_data[])
+{
+	visualization_msgs::Marker points;
+	points.header.frame_id = "/map";
+	// points.header.stamp = ros::Time::now();
+	points.ns = "Points";
+	points.action = visualization_msgs::Marker::ADD;
+	points.pose.orientation.w = 1.0;
+	points.id = 0;
+	points.type = visualization_msgs::Marker::POINTS;
+	points.scale.x = 0.2;
+	points.scale.y = 0.2;
+	points.color.g = 1.0f;
+	points.color.a = 1.0;
 
+	for(int i = 0; i < nS; i++ ) {
+		points.points.push_back(points_data[i]);
+	}
+
+	marker_pub.publish(points);
+}
+
+
+void gen_milestones()
+{
+		//Set up map bounds
+		//TODO: verify bounds
+		Vector2d xMax(9,5);
+		Vector2d xMin(-1,-5);
+		Vector2d xR;
+		xR = xMax - xMin;
+
+		// Set up goals
+		Vector3d w1(5,5,0);
+		Vector3d w2(1,0,3.14);
+		Vector3d w3(1.5,4.5,-1.57);
+		Vector3d w4(3,0.5,1.57);
+
+		// TODO: get obstacles
+
+		// Get milestones
+		Vector2d samples [nS];
+		geometry_msgs::Point p_data [nS];
+
+		for(int i = 0; i < nS; i++) {
+			double r1 = ((double) rand() / (RAND_MAX));
+			double r2 = ((double) rand() / (RAND_MAX));
+
+			//For RVIZ
+			geometry_msgs::Point p;
+			p.x = xR(0)*r1 + xMin(0);
+			p.y = xR(1)*r2 + xMin(1);
+			p.z = 0;
+			p_data[i] = p;
+
+			Vector2d s(xR(0)*r1 + xMin(0), xR(1)*r2 + xMin(1));
+			samples[i] = s;
+			// std::cout << s << std::endl;
+		}
+
+		Vector3d milestones [3];
+		milestones[0] = w1;
+    std::cout << milestones[0](0) << std::endl;
+
+		// TODO: select valid milestones
+
+		draw_points(p_data);
+}
+
+
+//Callback function for the Position topic (LIVE)
 void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg)
 {
 	//This function is called when a new position message is received
@@ -74,7 +143,7 @@ void drawCurve(int k)
    }
 
    //publish new curve
-  //  marker_pub.publish(lines);
+   marker_pub.publish(lines);
 
 }
 
@@ -95,7 +164,7 @@ void drawLineSegment(int k, geometry_msgs::Point start_point, geometry_msgs::Poi
    lines.points.push_back(end_point);
 
    //publish new line segment
-  //  marker_pub.publish(lines);
+   marker_pub.publish(lines);
 }
 
 //Callback function for the map
@@ -105,79 +174,6 @@ void map_callback(const nav_msgs::OccupancyGrid& msg)
 
     //you probably want to save the map into a form which is easy to work with
 }
-
-void draw_points(geometry_msgs::Point points_data[])
-{
-	visualization_msgs::Marker points;
-	points.header.frame_id = "/map";
-	// points.header.stamp = ros::Time::now();
-	points.ns = "Points";
-	points.action = visualization_msgs::Marker::ADD;
-	points.pose.orientation.w = 1.0;
-
-	points.id = 0;
-
-	points.type = visualization_msgs::Marker::POINTS;
-	// POINTS markers use x and y scale for width/height respectively
-	points.scale.x = 0.2;
-	points.scale.y = 0.2;
-
-	// Points are green
-	points.color.g = 1.0f;
-	points.color.a = 1.0;
-
-	for(int i = 0; i < nS; i++ ) {
-		points.points.push_back(points_data[i]);
-	}
-
-	marker_pub.publish(points);
-}
-
-
-void setup_map()
-{
-		//Set up map bounds
-		Vector2d xMax(9,5);
-		Vector2d xMin(-1,-5);
-		Vector2d xR;
-		xR = xMax - xMin;
-
-		// Set up goals
-		Vector3d w1(5,5,0);
-		Vector3d w2(1,0,3.14);
-		Vector3d w3(1.5,4.5,-1.57);
-		Vector3d w4(3,0.5,1.57);
-
-		// Get obstacles
-
-		// Get milestones
-		// int nS = 10;
-		Vector2d samples [nS];
-		geometry_msgs::Point p_data [nS];
-
-		for(int i = 0; i < nS; i++) {
-			double r1 = ((double) rand() / (RAND_MAX));
-			double r2 = ((double) rand() / (RAND_MAX));
-
-			//For RVIZ
-			geometry_msgs::Point p;
-			p.x = xR(0)*r1 + xMin(0);
-			p.y = xR(1)*r2 + xMin(1);
-			p.z = 0;
-			p_data[i] = p;
-
-			Vector2d s(xR(0)*r1 + xMin(0), xR(1)*r2 + xMin(1));
-			samples[i] = s;
-			// std::cout << s << std::endl;
-		}
-
-		Vector3d milestones [3];
-		milestones[0] = w1;
-    std::cout << milestones[0](0) << std::endl;
-
-		draw_points(p_data);
-}
-
 
 
 int main(int argc, char **argv)
@@ -209,19 +205,18 @@ int main(int argc, char **argv)
     end_.y = -12.0;
     end_.z = 0.0;
 
-		setup_map();
+		gen_milestones();
 
     while (ros::ok())
     {
     	loop_rate.sleep(); //Maintain the loop rate
     	ros::spinOnce();   //Check for new messages
 
-	 //Draw Curves
-         drawCurve(1);
-         drawCurve(2);
-         drawCurve(4);
-
-         drawLineSegment(5,start_,end_);
+			//Draw Curves
+			// drawCurve(1);
+			// drawCurve(2);
+			// drawCurve(4);
+	    // drawLineSegment(5,start_,end_);
 
     	//Main loop code goes here:
     	vel.linear.x = 0.1; // set linear speed
@@ -229,8 +224,6 @@ int main(int argc, char **argv)
 
     	velocity_publisher.publish(vel); // Publish the command velocity
 
-
     }
-
     return 0;
 }
