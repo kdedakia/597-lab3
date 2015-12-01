@@ -52,35 +52,19 @@ void draw_points(geometry_msgs::Point points_data[])
 	marker_pub.publish(points);
 }
 
-double norm(geometry_msgs::Point p1,geometry_msgs::Point p2) {
+double dist(geometry_msgs::Point p1,geometry_msgs::Point p2) {
 	return pow(pow(p2.x - p1.x,2) + pow(p2.y - p1.y,2), 0.5);
 }
 
 
 // Generate the graph connections for each milestone
 // TODO: ensure milestones array passed in is correct
-void gen_connections()
+void gen_connections(geometry_msgs::Point points[])
 {
-	int mS = 10;
+	int mS = 3;
 	// TODO: don't hardcode the size? Doesn't compile if a var is passed in...
-	Matrix<int, 10, 10> map;
+	Matrix<int, 3, 3> map;
 	map.fill(0);
-
-
-	geometry_msgs::Point p1;
-	geometry_msgs::Point p2;
-	p1.x = 1.0;
-	p1.y = 1.0;
-	p1.z = 0.0;
-	p2.x = 3.0;
-	p2.y = 3.0;
-	p2.z = 0.0;
-
-	geometry_msgs::Point points[2];
-	points[0] = p1;
-	points[1] = p2;
-
-	std::cout << norm(p1,p2) << std::endl;
 
 	for(int i = 0; i < mS; i++) {
 		double norms[mS];
@@ -88,8 +72,8 @@ void gen_connections()
 
 		for (int j = 0; j < mS; j++) {
 			// Set neighbors based on proximity
-			double n = norm(points[i],points[j]);
-			if ( i != j && n > 0.0  && n < nhDistance) {
+			double d = dist(points[i],points[j]);
+			if ( i != j && d > 0.0  && d < nhDistance) {
 				// TODO: collision check before adding edge
 				map(i,j) = 1;
 				map(j,i) = 1;
@@ -126,6 +110,7 @@ void gen_milestones()
 			double r1 = ((double) rand() / (RAND_MAX));
 			double r2 = ((double) rand() / (RAND_MAX));
 
+			// TODO: Vector to Point conversion?
 			//For RVIZ
 			geometry_msgs::Point p;
 			p.x = xR(0)*r1 + xMin(0);
@@ -256,8 +241,26 @@ int main(int argc, char **argv)
     end_.y = -12.0;
     end_.z = 0.0;
 
+		//Test points
+		geometry_msgs::Point p1;
+		geometry_msgs::Point p2;
+		geometry_msgs::Point p3;
+		p1.x = 1.0;
+		p1.y = 1.0;
+		p1.z = 0.0;
+		p2.x = 3.0;
+		p2.y = 3.0;
+		p2.z = 0.0;
+		p3.x = 10.0;
+		p3.y = 10.0;
+		p3.z = 0.0;
+		geometry_msgs::Point points[3];
+		points[0] = p1;
+		points[1] = p2;
+		points[2] = p3;
+
 		// gen_milestones();
-		gen_connections();
+		gen_connections(points);
 
     while (ros::ok())
     {
