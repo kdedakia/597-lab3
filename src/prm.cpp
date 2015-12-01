@@ -1,14 +1,10 @@
 //  ///////////////////////////////////////////////////////////
 //
-// turtlebot_example.cpp
-// This file contains example code for use with ME 597 lab 2
-// It outlines the basic setup of a ros node and the various
-// inputs and outputs needed for this lab
+// prm.cpp
+// ME 597 Lab 3 Code: Probabalistic Roadmap Algorithm
 //
-// Author: James Servos
 //
 // //////////////////////////////////////////////////////////
-
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
@@ -20,21 +16,20 @@
 #include <Eigen/Dense>
 #include <math.h>
 
-// using namespace std;
 using namespace Eigen;
 
 ros::Publisher marker_pub;
 
 #define TAGID 0
-#define nS 10 //Number of Samples
+#define numSamples 10 //Number of Samples
 #define nhDistance 10.0 //Neighborhood Distance
+
 
 // Used to display milestones & samples on RVIZ
 void draw_points(geometry_msgs::Point points_data[])
 {
 	visualization_msgs::Marker points;
 	points.header.frame_id = "/map";
-	// points.header.stamp = ros::Time::now();
 	points.ns = "Points";
 	points.action = visualization_msgs::Marker::ADD;
 	points.pose.orientation.w = 1.0;
@@ -45,13 +40,15 @@ void draw_points(geometry_msgs::Point points_data[])
 	points.color.g = 1.0f;
 	points.color.a = 1.0;
 
-	for(int i = 0; i < nS; i++ ) {
+	for(int i = 0; i < numSamples; i++ ) {
 		points.points.push_back(points_data[i]);
 	}
 
 	marker_pub.publish(points);
 }
 
+
+// Euclidian Distance between 2 points
 double dist(geometry_msgs::Point p1,geometry_msgs::Point p2) {
 	return pow(pow(p2.x - p1.x,2) + pow(p2.y - p1.y,2), 0.5);
 }
@@ -84,6 +81,7 @@ void gen_connections(geometry_msgs::Point points[])
 	std::cout << map << std::endl;
 }
 
+
 // Generate an array of milestones, display on RVIZ
 void gen_milestones()
 {
@@ -103,10 +101,10 @@ void gen_milestones()
 		// TODO: get obstacles
 
 		// Get milestones
-		Vector2d samples [nS];
-		geometry_msgs::Point p_data [nS];
+		Vector2d samples [numSamples];
+		geometry_msgs::Point p_data [numSamples];
 
-		for(int i = 0; i < nS; i++) {
+		for(int i = 0; i < numSamples; i++) {
 			double r1 = ((double) rand() / (RAND_MAX));
 			double r2 = ((double) rand() / (RAND_MAX));
 
@@ -143,6 +141,7 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg)
 
 	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
+
 
 //Example of drawing a curve
 void drawCurve(int k)
@@ -183,6 +182,7 @@ void drawCurve(int k)
 
 }
 
+
 void drawLineSegment(int k, geometry_msgs::Point start_point, geometry_msgs::Point end_point)
 {
    visualization_msgs::Marker lines;
@@ -202,6 +202,7 @@ void drawLineSegment(int k, geometry_msgs::Point start_point, geometry_msgs::Poi
    //publish new line segment
    marker_pub.publish(lines);
 }
+
 
 //Callback function for the map
 void map_callback(const nav_msgs::OccupancyGrid& msg)
