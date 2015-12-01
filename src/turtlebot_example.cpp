@@ -25,6 +25,7 @@ using namespace Eigen;
 ros::Publisher marker_pub;
 
 #define TAGID 0
+#define nS 10 //Number of Samples
 
 //Callback function for the Position topic (LIVE)
 
@@ -73,7 +74,7 @@ void drawCurve(int k)
    }
 
    //publish new curve
-   marker_pub.publish(lines);
+  //  marker_pub.publish(lines);
 
 }
 
@@ -94,7 +95,7 @@ void drawLineSegment(int k, geometry_msgs::Point start_point, geometry_msgs::Poi
    lines.points.push_back(end_point);
 
    //publish new line segment
-   marker_pub.publish(lines);
+  //  marker_pub.publish(lines);
 }
 
 //Callback function for the map
@@ -104,6 +105,34 @@ void map_callback(const nav_msgs::OccupancyGrid& msg)
 
     //you probably want to save the map into a form which is easy to work with
 }
+
+void draw_points(geometry_msgs::Point points_data[])
+{
+	visualization_msgs::Marker points;
+	points.header.frame_id = "/map";
+	// points.header.stamp = ros::Time::now();
+	points.ns = "Points";
+	points.action = visualization_msgs::Marker::ADD;
+	points.pose.orientation.w = 1.0;
+
+	points.id = 0;
+
+	points.type = visualization_msgs::Marker::POINTS;
+	// POINTS markers use x and y scale for width/height respectively
+	points.scale.x = 0.2;
+	points.scale.y = 0.2;
+
+	// Points are green
+	points.color.g = 1.0f;
+	points.color.a = 1.0;
+
+	for(int i = 0; i < nS; i++ ) {
+		points.points.push_back(points_data[i]);
+	}
+
+	marker_pub.publish(points);
+}
+
 
 void setup_map()
 {
@@ -122,10 +151,31 @@ void setup_map()
 		// Get obstacles
 
 		// Get milestones
-		int nS = 500;
+		// int nS = 10;
+		Vector2d samples [nS];
+		geometry_msgs::Point p_data [nS];
+
+		for(int i = 0; i < nS; i++) {
+			double r1 = ((double) rand() / (RAND_MAX));
+			double r2 = ((double) rand() / (RAND_MAX));
+
+			//For RVIZ
+			geometry_msgs::Point p;
+			p.x = xR(0)*r1 + xMin(0);
+			p.y = xR(1)*r2 + xMin(1);
+			p.z = 0;
+			p_data[i] = p;
+
+			Vector2d s(xR(0)*r1 + xMin(0), xR(1)*r2 + xMin(1));
+			samples[i] = s;
+			// std::cout << s << std::endl;
+		}
+
 		Vector3d milestones [3];
 		milestones[0] = w1;
-    std::cout << milestones[0] << std::endl ;
+    std::cout << milestones[0](0) << std::endl;
+
+		draw_points(p_data);
 }
 
 
@@ -178,6 +228,8 @@ int main(int argc, char **argv)
     	vel.angular.z = 0.3; // set angular speed
 
     	velocity_publisher.publish(vel); // Publish the command velocity
+
+
     }
 
     return 0;
