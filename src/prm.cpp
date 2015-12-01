@@ -18,6 +18,7 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <Eigen/Dense>
+#include <math.h>
 
 // using namespace std;
 using namespace Eigen;
@@ -26,7 +27,9 @@ ros::Publisher marker_pub;
 
 #define TAGID 0
 #define nS 10 //Number of Samples
+#define nhDistance 10.0 //Neighborhood Distance
 
+// Used to display milestones & samples on RVIZ
 void draw_points(geometry_msgs::Point points_data[])
 {
 	visualization_msgs::Marker points;
@@ -49,7 +52,55 @@ void draw_points(geometry_msgs::Point points_data[])
 	marker_pub.publish(points);
 }
 
+double norm(geometry_msgs::Point p1,geometry_msgs::Point p2) {
+	return pow(pow(p2.x - p1.x,2) + pow(p2.y - p1.y,2), 0.5);
+}
 
+
+// Generate the graph connections for each milestone
+// TODO: ensure milestones array passed in is correct
+void gen_connections()
+{
+	int mS = 10;
+	// TODO: don't hardcode the size? Doesn't compile if a var is passed in...
+	Matrix<int, 10, 10> map;
+	map.fill(0);
+
+
+	geometry_msgs::Point p1;
+	geometry_msgs::Point p2;
+	p1.x = 1.0;
+	p1.y = 1.0;
+	p1.z = 0.0;
+	p2.x = 3.0;
+	p2.y = 3.0;
+	p2.z = 0.0;
+
+	geometry_msgs::Point points[2];
+	points[0] = p1;
+	points[1] = p2;
+
+	std::cout << norm(p1,p2) << std::endl;
+
+	for(int i = 0; i < mS; i++) {
+		double norms[mS];
+		std::cout << points[i].x << std::endl;
+
+		for (int j = 0; j < mS; j++) {
+			// Set neighbors based on proximity
+			double n = norm(points[i],points[j]);
+			if ( i != j && n > 0.0  && n < nhDistance) {
+				// TODO: collision check before adding edge
+				map(i,j) = 1;
+				map(j,i) = 1;
+			}
+		}
+	}
+
+	std::cout << map << std::endl;
+}
+
+// Generate an array of milestones, display on RVIZ
 void gen_milestones()
 {
 		//Set up map bounds
@@ -205,7 +256,8 @@ int main(int argc, char **argv)
     end_.y = -12.0;
     end_.z = 0.0;
 
-		gen_milestones();
+		// gen_milestones();
+		gen_connections();
 
     while (ros::ok())
     {
