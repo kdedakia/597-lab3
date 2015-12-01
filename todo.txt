@@ -1,0 +1,15 @@
+Get obstacle locations
+  location + size of obstacles
+  convert data to usable form?
+
+Feasible Milestones
+  Verify map bounds
+  Collision detection
+
+Feasible Connections
+  Collision detection
+
+Find Shortest Path
+  visualize with RVIZ
+
+Move Turtlebot
