@@ -34,7 +34,7 @@ ros::Publisher line_pub;
 #define numMilestones 95 //Number of Samples
 #define nhDistance 2.0 //Neighborhood Distance
 #define obsThreshold 50
-#define angleThreshold 10
+#define angleThreshold 1
 #define distThreshold 2
 
 
@@ -394,14 +394,14 @@ int main(int argc, char **argv)
     } while (find_shortest_path());
 
 		Point dest;
-		dest.x = 0.311;
+		dest.x = 0.0;
 		dest.y = -5.3;
 
     while (ros::ok()) {
     	loop_rate.sleep(); //Maintain the loop rate
     	ros::spinOnce();   //Check for new messages
 
-			// navigate(dest,velocity_publisher);
+			navigate(dest,velocity_publisher);
     }
     return 0;
 }
