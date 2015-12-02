@@ -16,44 +16,31 @@
 #include <Eigen/Dense>
 #include <math.h>
 #include <vector>
-#include <list>
-#include <stack>
-#include <algorithm>
 
 using namespace Eigen;
 using geometry_msgs::Point;
 using geometry_msgs::PoseWithCovarianceStamped;
 using std::vector;
-using std::list;
-using std::stack;
-
 
 ros::Publisher marker_pub;
-ros::Publisher line_pub;
-ros::Publisher path_pub;
-ros::Publisher actual_pub;
 
 #define SIMULATION // change this to live if necessary
 
 #define TAGID 0
 #define COLS 100
 #define ROWS 100
-#define numMilestones 100 //Number of Samples
-#define nhDistance 2.0 //Neighborhood Distance
+#define numMilestones 150 //Number of Samples
+#define nhDistance 3.0 //Neighborhood Distance
 #define obsThreshold 50
-#define angleThreshold 1
-#define distThreshold 0.25
-
 
 vector<int8_t> gMap;
 bool ad_grid[numMilestones][numMilestones] = {false};
 bool initial_pose_found = false;
 vector<Point> milestones;
-vector<Point> robotPosition;
 Point startPoint;
 Point currPoint;
 vector<Point> wayPoints;
-stack<Point> path;
+vector<Point> path;
 
 int8_t getGridVal(uint8_t x, uint8_t y) {
 	return gMap[y*COLS + x];
@@ -76,58 +63,24 @@ void draw_points(vector<Point> points_vector) {
 	marker_pub.publish(points);
 }
 
-void draw_robotPos(vector<Point> points_vector) {
-	visualization_msgs::Marker points;
-	points.header.frame_id = "/map";
-	points.ns = "Robot_Pose";
-	points.action = visualization_msgs::Marker::ADD;
-	points.pose.orientation.w = 1.0;
-	points.id = 0;
-	points.type = visualization_msgs::Marker::POINTS;
-	points.scale.x = 0.2;
-	points.scale.y = 0.2;
-	points.color.b = 1.0f;
-	points.color.a = 1.0;
-	points.points = points_vector;
-	actual_pub.publish(points);
-}
-
-void drawLineSegments(vector<Point> lines_vector)
+void drawLineSegment(int k, Point start_point, Point end_point)
 {
    visualization_msgs::Marker lines;
    lines.header.frame_id = "/map";
-   lines.id = 0; //each curve must have a unique id or you will overwrite an old ones
-   lines.type = visualization_msgs::Marker::LINE_LIST;
+   lines.id = k; //each curve must have a unique id or you will overwrite an old ones
+   lines.type = visualization_msgs::Marker::LINE_STRIP;
    lines.action = visualization_msgs::Marker::ADD;
    lines.ns = "line_segments";
-   lines.scale.x = 0.04;
+   lines.scale.x = 0.01;
    lines.color.r = 1.0;
-   lines.color.b = 0.2;
+   lines.color.b = 0.2*k;
    lines.color.a = 1.0;
 
-   lines.points = lines_vector;
+   lines.points.push_back(start_point);
+   lines.points.push_back(end_point);
 
    //publish new line segment
-   line_pub.publish(lines);
-}
-
-void drawPath(vector<Point> path_vector)
-{
-   visualization_msgs::Marker lines;
-   lines.header.frame_id = "/map";
-   lines.id = 0; //each curve must have a unique id or you will overwrite an old ones
-   lines.type = visualization_msgs::Marker::LINE_LIST;
-   lines.action = visualization_msgs::Marker::ADD;
-   lines.ns = "line_segments";
-   lines.scale.x = 0.1;
-   lines.color.r = 1.0;
-   lines.color.b = 0.8;
-   lines.color.a = 0.8;
-
-   lines.points = path_vector;
-
-   //publish new line segment
-   path_pub.publish(lines);
+   marker_pub.publish(lines);
 }
 
 // Euclidian Distance between 2 points
@@ -151,7 +104,7 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
     int dy = abs(y1 - y0);
     int dx2 = x1 - x0;
     int dy2 = y1 - y0;
-
+    
     const bool s = abs(dy) > abs(dx);
 
     if (s) {
@@ -189,8 +142,10 @@ bool isFeasible (Point node1, Point node2){
 	int x1 = indexX(node2.x);
 	int y1 = indexY(node2.y);
 	bresenham (x0,y0,x1,y1,x,y);
-	int radius = 3;
+	int radius = 2;
+	//std::cout << "Node 1 x:" << x0 << "y: " << y0 << " Node 2 x:" << x1 << "y:" << y1 << std::endl;
 	for (int i =0; i < x.size(); i ++){
+		std::cout << "Grid val: " << (int)getGridVal(x.at(i),y.at(i)) << std::endl;
 		for (int j = 0; j <= radius; j++){
 			if (getGridVal(x.at(i),y.at(i)-j) > obsThreshold ||
 				getGridVal(x.at(i),y.at(i)+j) > obsThreshold ||
@@ -201,29 +156,37 @@ bool isFeasible (Point node1, Point node2){
 				return false;
 			}
 		}
+		// if (getGridVal(x.at(i),y.at(i)) > obsThreshold ||
+		// 	getGridVal(x.at(i)+1,y.at(i)+1) > obsThreshold ||
+		// 	getGridVal(x.at(i)+2,y.at(i)+2) > obsThreshold ||
+		// 	getGridVal(x.at(i)-1,y.at(i)-1) > obsThreshold ||
+		// 	getGridVal(x.at(i)-2,y.at(i)-2) > obsThreshold ){
+
+		// 	return false;
+		// }
 	}
+	//drawLineSegment(1,node1, node2);
 	return true;
 }
 
 // Generate the graph connections for each milestone
 // TODO: ensure milestones array passed in is correct
 void gen_connections()
-{	vector<Point> lines_vector;
+{	int id = 0;
 	for(int i = 0; i < numMilestones; i++) {
 		for (int j = 0; j < numMilestones; j++) {
 			float d = dist(milestones[i],milestones[j]);
-			if (i != j &&
+			if (i != j && 
 				d > 0.0 &&
 				d < nhDistance &&
 				isFeasible(milestones[i], milestones[j])) {
 				ad_grid[i][j] = true;
 				ad_grid[j][i] = true;
-				lines_vector.push_back(milestones[i]);
-				lines_vector.push_back(milestones[j]);
+				drawLineSegment(id, milestones[i], milestones[j]);
+				id++;
 			}
 		}
 	}
-	drawLineSegments(lines_vector);
 }
 
 double actualX(int x) {
@@ -234,24 +197,12 @@ double actualY(int y) {
 	return ((double)y/10) - 5.0;
 }
 
-bool obstacleCloseby(int x, int y) {
-	for (int i = -2; i < 3; i++) {
-		for (int j = -2; j < 3; j++) {
-			int newX = x+i, newY = y+j;
-			if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS) {
-				if (getGridVal(newX,newY) > obsThreshold) return true;
-			}
-		}
-	}
-	return false;
-}
-
 // Generate an array of milestones, display on RVIZ
-void gen_milestones() {
-	while (milestones.size() <= numMilestones) {
+void gen_milestones() {	
+	while (milestones.size() < numMilestones) {
 		int x = rand() % COLS;
 		int y = rand() % ROWS;
-		if (!obstacleCloseby(x,y)) {
+		if (getGridVal(x,y) < obsThreshold) {
 			Point p; p.x = actualX(x); p.y = actualY(y); p.z = 0.0;
 			milestones.push_back(p);
 		}
@@ -272,9 +223,6 @@ void pose_callback(const PoseWithCovarianceStamped &msg)
 		startPoint.z = Yaw;
 	}
 	initial_pose_found = true;
-	currPoint.x = X;
-	currPoint.y = Y;
-	currPoint.z = Yaw;
 	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
 
@@ -322,65 +270,8 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 	gMap = msg.data;
 }
 
-struct MapNode {
-	int8_t idx, parentIdx;
-	double h, d; // h - heuristic (distance to goal) // d - total distance travelled to reach node
-	bool closed;
-	MapNode(int8_t idx, uint16_t h) : idx(idx), parentIdx(-1), h(h), d(0), closed(false) {}
-};
-
-bool compare(MapNode *node1, MapNode *node2) {
-	return (node1->h + node1->d) < (node2->h + node2->d);
-}
-
-bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
-	ROS_INFO("FINDING SHORTEST PATH");
-	vector<MapNode> nodes;
-	for (unsigned int i = 0; i < numMilestones; i++) {
-		nodes.push_back(MapNode(i, dist(milestones[i], milestones[toIdx])));
-	}
-	list<MapNode*> openList;
-	list<MapNode*> closedList;
-
-	MapNode *currNode = &nodes[startIdx];
-	currNode->d = 0;
-	openList.push_back(currNode);
-
-	while(!openList.empty()) { // A* search
-
-		openList.sort(compare);
-		currNode = openList.front();
-		openList.pop_front();
-		currNode->closed = true;
-		closedList.push_back(currNode);
-
-		if (currNode->idx == toIdx) { // termination condition
-			do {
-				path.push(milestones[currNode->idx]);
-				std::cout << "index: " << (int)currNode->idx << std::endl;
-				currNode = &nodes[currNode->parentIdx];
-			} while (currNode->parentIdx != -1);
-			ROS_INFO("FOUND");
-			return true;
-		}
-		for (unsigned int j = 0; j < numMilestones; j++) {
-			if (ad_grid[currNode->idx][j]) {
-				if (nodes[j].closed) continue;
-				double disToNewNode = dist(milestones[currNode->idx], milestones[j]);
-				double totalDistanceTravelled = currNode->d + disToNewNode;
-				if (find(openList.begin(), openList.end(), currNode) != openList.end()) { // found in open set
-					if (totalDistanceTravelled < nodes[j].d) {
-						nodes[j].parentIdx = currNode->idx;
-						nodes[j].d = totalDistanceTravelled;
-					}
-				} else { // not found in open set
-					nodes[j].parentIdx = currNode->idx;
-					openList.push_back(&nodes[j]);
-				}
-			}
-		}
-	}
-	ROS_INFO("DIDN'T FIND");
+bool find_shortest_path() {
+	// TODO
 	return false;
 }
 
@@ -393,13 +284,8 @@ void init_map() {
 void init_vectors() {
 	milestones.clear();
 	wayPoints.clear();
-	while (!path.empty()) path.pop();
-	ROS_INFO("IN INIT_VECTOR");
-	for(int i = 0; i < numMilestones; i++) {
-		for (int j = 0; j < numMilestones; j++) {
-			ad_grid[i][j] = false;
-		}
-	}
+	path.clear();
+
 	// For simulation - insert waypoints
 #ifdef SIMULATION
 	Point p1; p1.x = 4.0; p1.y = 0.0; p1.z = 0.0;
@@ -408,7 +294,6 @@ void init_vectors() {
 	wayPoints.push_back(p1);
 	wayPoints.push_back(p2);
 	wayPoints.push_back(p3);
-	milestones.push_back(startPoint);
 	milestones.push_back(p1);
 	milestones.push_back(p2);
 	milestones.push_back(p3);
@@ -422,7 +307,6 @@ void init_vectors() {
 	wayPoints.push_back(p2);
 	wayPoints.push_back(p3);
 	wayPoints.push_back(p4);
-	milestones.push_back(startPoint);
 	milestones.push_back(p1);
 	milestones.push_back(p2);
 	milestones.push_back(p3);
@@ -430,55 +314,11 @@ void init_vectors() {
 #endif
 }
 
-float get_angle(Point dest) {
-	float x1 = cos(currPoint.z);
-	float y1 = sin(currPoint.z);
-	float x2 = dest.x - currPoint.x;
-	float y2 = dest.y - currPoint.y;
-	float dot = x1*x2 + y1*y2;
-	float det = x1*y2 - y1*x2;
-	return (atan2(det, dot) * 180 / 3.14);
-}
-
-bool navigate(Point dest,ros::Publisher velocity_publisher) {
-	float delta_angle = get_angle(dest);
-	float delta_dist = dist(currPoint,dest);
-
-	geometry_msgs::Twist vel;
-
-	// std::cout << "CURR: " << currPoint.x << " | " << currPoint.y << " | " << currPoint.z << std::endl;
-	std::cout <<"CURRENT POSE: ("<< currPoint.x << " , " << currPoint.y << ") DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
-
-	if (delta_dist > distThreshold) {
-		delta_dist = dist(currPoint,dest);
-		delta_angle = get_angle(dest);
-
-		if(delta_angle > angleThreshold) {
-			std::cout << "ROTATE: " << delta_angle << std::endl;
-			vel.linear.x = 0.0;
-			vel.angular.z = 0.3; // rotate CW
-    	velocity_publisher.publish(vel);
-		} else {
-			std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
-			vel.linear.x = 0.1; // move forward
-    	vel.angular.z = 0.02*delta_angle;
-    	velocity_publisher.publish(vel);
-		}
-	} else {
-		vel.linear.x = 0.0; // stop
-		vel.angular.z = 0.0;
-		velocity_publisher.publish(vel);
-		return true;
-	}
-
-}
-
 int main(int argc, char **argv)
 {
 	//Initialize the ROS framework
     ros::init(argc,argv,"main_control");
-		ros::NodeHandle n;
-
+    ros::NodeHandle n;
     srand(time(NULL));
     init_map();
     //Subscribe to the desired topics and assign callbacks
@@ -493,54 +333,32 @@ int main(int argc, char **argv)
 	}
 	ROS_INFO("Receieved initial pose!");
 
-    //Setup topics to Publish from this node
+	wayPoints.push_back(startPoint);
 
+	ROS_INFO("Initial waypoints and milestones updated!");
+
+    //Setup topics to Publish from this node
+    ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
-	ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
-    line_pub = n.advertise<visualization_msgs::Marker>("visualization_line", 1, true);
-    path_pub = n.advertise<visualization_msgs::Marker>("visualization_path", 1, true);
-    actual_pub = n.advertise<visualization_msgs::Marker>("visualization_marker2", 1, true);
+
     //Velocity control variable
     geometry_msgs::Twist vel;
 
-    do {
+    do {	
     	init_vectors();
 		gen_milestones();			// updates milestones global vector
 		gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
-    } while (!find_shortest_path(2, 3) || !find_shortest_path(1, 2)|| !find_shortest_path(0, 1));
-    ROS_INFO("DONE!");
-    std::cout << "size of path: " << path.size() << std::endl;
-    vector<Point> path_lines;
-    path_lines.push_back(path.top());
-    path.pop();
-    while (!path.empty()) {
-    	path_lines.push_back(path.top());
-    	if (path.size() > 1) path_lines.push_back(path.top());
-    	path.pop();
-    }
-    drawPath(path_lines);
-
-	Point dest;
-	dest.x = 0.0;
-	dest.y = -5.3;
-
-
-	int i = 0;
+    } while (find_shortest_path());
+	
     while (ros::ok()) {
     	loop_rate.sleep(); //Maintain the loop rate
     	ros::spinOnce();   //Check for new messages
 
-		if (navigate(path_lines.at(i),velocity_publisher)){
-			if (i < path_lines.size()){
-				i ++;				
-			}
-		}
-	
-		// robot_pose.push_back(currPoint);
-		// points.points = robot_pose;
-  //       actual_pub.publish(points);
-		robotPosition.push_back(currPoint);
-		draw_robotPos(robotPosition);
+    	//Main loop code goes here:
+    	vel.linear.x = 0.1; // set linear speed
+    	vel.angular.z = 0.3; // set angular speed
+
+    	velocity_publisher.publish(vel); // Publish the command velocity
     }
     return 0;
 }
