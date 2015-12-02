@@ -17,13 +17,39 @@
 #include <math.h>
 
 using namespace Eigen;
+using geometry_msgs::Point;
 
 ros::Publisher marker_pub;
 
+#define SIMULATION // change this to live if necessary
 #define TAGID 0
+#define COLS 100
+#define ROWS 100
 #define numSamples 10 //Number of Samples
 #define nhDistance 10.0 //Neighborhood Distance
+#define obsThreshold 50
 
+int gMap[ROWS*COLS];
+bool initial_pose_found = false;
+
+vector<tuple<uint8_t,uint8_t,uint16_t>> milestones;
+tuple<uint8_t,uint8_t,uint16_t> startPoint;
+tuple<uint8_t,uint8_t,uint16_t> currPoint;
+vector<tuple<uint8_t,uint8_t,uint16_t>> wayPoints;
+
+vector<Point> milestones;
+Point startPoint;
+Point currPoint;
+vector<Point> wayPoints;
+
+
+int getGridVal(uint8_t x, uint8_t y) {
+	return gMap[(y*10)*COLS + x*10];
+}
+
+int convertX(float64 x) {
+
+}
 
 // Used to display milestones & samples on RVIZ
 void draw_points(geometry_msgs::Point points_data[])
@@ -86,21 +112,22 @@ void gen_connections(geometry_msgs::Point points[])
 void gen_milestones()
 {
 		//Set up map bounds
-		//TODO: verify bounds
-		Vector2d xMax(9,5);
-		Vector2d xMin(-1,-5);
-		Vector2d xR;
-		xR = xMax - xMin;
+		// Vector2d xMax(9,5);
+		// Vector2d xMin(-1,-5);
+		// Vector2d xR;
+		// xR = xMax - xMin;
+		//
+		// // Set up goals
+		// Vector3d w1(5,5,0);
+		// Vector3d w2(1,0,3.14);
+		// Vector3d w3(1.5,4.5,-1.57);
+		// Vector3d w4(3,0.5,1.57);
 
-		// Set up goals
-		Vector3d w1(5,5,0);
-		Vector3d w2(1,0,3.14);
-		Vector3d w3(1.5,4.5,-1.57);
-		Vector3d w4(3,0.5,1.57);
+		// collect certain number of Samples with rand
+		// filter samples by checking map
+		// update milestons vector
 
-		// TODO: get obstacles
-
-		// Get milestones
+		// Generate sample points
 		Vector2d samples [numSamples];
 		geometry_msgs::Point p_data [numSamples];
 
@@ -110,7 +137,7 @@ void gen_milestones()
 
 			// TODO: Vector to Point conversion?
 			//For RVIZ
-			geometry_msgs::Point p;
+			Point p;
 			p.x = xR(0)*r1 + xMin(0);
 			p.y = xR(1)*r2 + xMin(1);
 			p.z = 0;
@@ -126,7 +153,11 @@ void gen_milestones()
     std::cout << milestones[0](0) << std::endl;
 
 		// TODO: select valid milestones
+		for (int i = 0; i < numSamples; i++) {
+			if(getGridVal(samples[i].x,samples[i].y) > obsThreshold) {
 
+			}
+		}
 		draw_points(p_data);
 }
 
@@ -138,7 +169,12 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg)
 	double X = msg.pose.pose.position.x; // Robot X psotition
 	double Y = msg.pose.pose.position.y; // Robot Y psotition
  	double Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
-
+	if (!initial_pose_found) {
+		startPoint.x = X;
+		startPoint.y = Y;
+		startPoint.z = Yaw;
+	}
+	initial_pose_found = true;
 	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
 
@@ -205,12 +241,11 @@ void drawLineSegment(int k, geometry_msgs::Point start_point, geometry_msgs::Poi
 
 
 //Callback function for the map
-void map_callback(const nav_msgs::OccupancyGrid& msg)
-{
-    //This function is called when a new map is received
-
-    //you probably want to save the map into a form which is easy to work with
+void map_callback(const nav_msgs::OccupancyGrid& msg) {
+		gMap = msg.data;
 }
+
+
 
 
 int main(int argc, char **argv)
@@ -222,6 +257,28 @@ int main(int argc, char **argv)
     //Subscribe to the desired topics and assign callbacks
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
     ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
+		ROS_INFO("Subscribed to everything! Waiting for initial pose.");
+
+		ros::Rate loop_rate(20);    //20Hz update rate
+		while (!initial_pose_found) {
+			loop_rate.sleep();
+			ros::spinOnce();
+		}
+		ROS_INFO("Receieved initial pose!");
+
+		// For simulation - insert waypoints
+	#ifdef SIMULATION
+		wayPoints.push_back(Point(4.0,0.0,0.0));
+		wayPoints.push_back(Point(8.0,-4.0,3.14));
+		wayPoints.push_back(Point(8.0.0,0.0,-1.57));
+	#else
+		// For live
+		wayPoints.push_back(Point(5.0,5.0,0.0));
+		wayPoints.push_back(Point(1.0,0.0,3.14));
+		wayPoints.push_back(Point(1.5,4.5,-1.57));
+		wayPoints.push_back(Point(3.0,0.5,1.57));
+	#end
+
 
     //Setup topics to Publish from this node
     ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
@@ -230,8 +287,6 @@ int main(int argc, char **argv)
     //Velocity control variable
     geometry_msgs::Twist vel;
 
-    //Set the loop rate
-    ros::Rate loop_rate(20);    //20Hz update rate
 
     geometry_msgs::Point start_, end_;
 
