@@ -92,6 +92,8 @@ void draw_robotPos(vector<Point> points_vector) {
 	points.color.b = 1.0f;
 	points.color.a = 1.0;
 	points.points = points_vector;
+	Point last_point = points_vector[points_vector.size()-1];
+	// std::cout << "Point x: y: " << last_point.x << " " << last_point.y << std::endl;
 	actual_pub.publish(points);
 }
 
@@ -455,19 +457,19 @@ bool navigate(Point dest,ros::Publisher velocity_publisher) {
 	geometry_msgs::Twist vel;
 
 	// std::cout << "CURR: " << currPoint.x << " | " << currPoint.y << " | " << currPoint.z << std::endl;
-	std::cout <<"CURRENT POSE: ("<< currPoint.x << " , " << currPoint.y << ") DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
+	// std::cout <<"CURRENT POSE: ("<< currPoint.x << " , " << currPoint.y << ") DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
 
 	if (delta_dist > distThreshold) {
 		delta_dist = dist(currPoint,dest);
 		delta_angle = get_angle(dest);
 
 		if(delta_angle > angleThreshold) {
-			std::cout << "ROTATE: " << delta_angle << std::endl;
+			// std::cout << "ROTATE: " << delta_angle << std::endl;
 			vel.linear.x = 0.0;
 			vel.angular.z = 0.3; // rotate CW
     	velocity_publisher.publish(vel);
 		} else {
-			std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
+			// std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
 			vel.linear.x = 0.1; // move forward
     	vel.angular.z = 0.02*delta_angle;
     	velocity_publisher.publish(vel);
@@ -544,15 +546,15 @@ int main(int argc, char **argv)
     	loop_rate.sleep(); //Maintain the loop rate
     	ros::spinOnce();   //Check for new messages
 
-		if (navigate(path_lines.at(i),velocity_publisher)){
-			if (i < path_lines.size()){
-				i ++;				
+		if (navigate(actual_path_lines.at(i),velocity_publisher)){
+			if (i < actual_path_lines.size()){
+				i++;				
 			}
 		}
 	
 		// robot_pose.push_back(currPoint);
 		// points.points = robot_pose;
-  //       actual_pub.publish(points);
+        // actual_pub.publish(points);
 		robotPosition.push_back(currPoint);
 		draw_robotPos(robotPosition);
     }
