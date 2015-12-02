@@ -19,6 +19,7 @@
 #include <list>
 #include <stack>
 #include <algorithm>
+#include <queue>
 
 using namespace Eigen;
 using geometry_msgs::Point;
@@ -26,6 +27,7 @@ using geometry_msgs::PoseWithCovarianceStamped;
 using std::vector;
 using std::list;
 using std::stack;
+using std::queue;
 
 
 ros::Publisher marker_pub;
@@ -52,6 +54,7 @@ Point startPoint;
 Point currPoint;
 vector<Point> wayPoints;
 stack<Point> path;
+vector<Point> path_lines;
 
 int8_t getGridVal(uint8_t x, uint8_t y) {
 	return gMap[y*COLS + x];
@@ -342,7 +345,12 @@ bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
 				currNode = &nodes[currNode->parentIdx];
 			} while (currNode->parentIdx != -1);
 			path.push(milestones[currNode->idx]);
+			while (!path.empty()) {
+				path_lines.push_back(path.top());
+				path.pop();
+			}
 			ROS_INFO("FOUND");
+
 			return true;
 		}
 		for (unsigned int j = 0; j < numMilestones; j++) {
@@ -487,15 +495,21 @@ int main(int argc, char **argv)
     } while (!find_shortest_path(0, 1) || !find_shortest_path(1, 2) || !find_shortest_path(2, 3));
     ROS_INFO("DONE!");
     // std::cout << "size of path: " << path.size() << std::endl;
-    vector<Point> path_lines;
-    path_lines.push_back(path.top());
-    path.pop();
-    while (!path.empty()) {
-    	path_lines.push_back(path.top());
-    	if (path.size() > 1) path_lines.push_back(path.top());
-    	path.pop();
+    vector<Point> actual_path_lines;
+    // path_lines.push_back(path.top());
+    // path.pop();
+    // while (!path.empty()) {
+    // 	path_lines.push_back(path.top());
+    // 	if (path.size() > 1) path_lines.push_back(path.top());
+    // 	path.pop();
+    // }
+	actual_path_lines.push_back(path_lines[0]);
+    for (unsigned int i = 1; i < path_lines.size(); i++) {
+    	actual_path_lines.push_back(path_lines[i]);
+    	if (i != path_lines.size()-1) actual_path_lines.push_back(path_lines[i]);
     }
-    drawPath(path_lines);
+    drawPath(actual_path_lines);
+    ROS_INFO("DREW!");	
 
 	Point dest;
 	dest.x = 0.0;
