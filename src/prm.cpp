@@ -87,6 +87,7 @@ void draw_robotPos(vector<Point> points_vector) {
 	points.scale.x = 0.2;
 	points.scale.y = 0.2;
 	points.color.b = 1.0f;
+	points.color.g = 1.0f;
 	points.color.a = 1.0;
 	points.points = points_vector;
 	actual_pub.publish(points);
