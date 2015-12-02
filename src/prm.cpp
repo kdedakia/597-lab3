@@ -30,13 +30,14 @@ using std::stack;
 
 ros::Publisher marker_pub;
 ros::Publisher line_pub;
+ros::Publisher path_pub;
 
 #define SIMULATION // change this to live if necessary
 
 #define TAGID 0
 #define COLS 100
 #define ROWS 100
-#define numMilestones 95 //Number of Samples
+#define numMilestones 100 //Number of Samples
 #define nhDistance 2.0 //Neighborhood Distance
 #define obsThreshold 50
 #define angleThreshold 1
@@ -51,7 +52,6 @@ Point startPoint;
 Point currPoint;
 vector<Point> wayPoints;
 stack<Point> path;
-
 
 int8_t getGridVal(uint8_t x, uint8_t y) {
 	return gMap[y*COLS + x];
@@ -91,6 +91,25 @@ void drawLineSegments(vector<Point> lines_vector)
 
    //publish new line segment
    line_pub.publish(lines);
+}
+
+void drawPath(vector<Point> path_vector)
+{
+   visualization_msgs::Marker lines;
+   lines.header.frame_id = "/map";
+   lines.id = 0; //each curve must have a unique id or you will overwrite an old ones
+   lines.type = visualization_msgs::Marker::LINE_LIST;
+   lines.action = visualization_msgs::Marker::ADD;
+   lines.ns = "line_segments";
+   lines.scale.x = 0.1;
+   lines.color.r = 1.0;
+   lines.color.b = 0.8;
+   lines.color.a = 0.8;
+
+   lines.points = path_vector;
+
+   //publish new line segment
+   path_pub.publish(lines);
 }
 
 // Euclidian Distance between 2 points
@@ -201,7 +220,7 @@ bool obstacleCloseby(int x, int y) {
 	for (int i = -2; i < 3; i++) {
 		for (int j = -2; j < 3; j++) {
 			int newX = x+i, newY = y+j;
-			if (newX >= 0 && newX < 100 && newY >= 0 && newY < 100) {
+			if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS) {
 				if (getGridVal(newX,newY) > obsThreshold) return true;
 			}
 		}
@@ -211,7 +230,7 @@ bool obstacleCloseby(int x, int y) {
 
 // Generate an array of milestones, display on RVIZ
 void gen_milestones() {
-	while (milestones.size() < numMilestones) {
+	while (milestones.size() <= numMilestones) {
 		int x = rand() % COLS;
 		int y = rand() % ROWS;
 		if (!obstacleCloseby(x,y)) {
@@ -297,6 +316,7 @@ bool compare(MapNode *node1, MapNode *node2) {
 }
 
 bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
+	ROS_INFO("FINDING SHORTEST PATH");
 	vector<MapNode> nodes;
 	for (unsigned int i = 0; i < numMilestones; i++) {
 		nodes.push_back(MapNode(i, dist(milestones[i], milestones[toIdx])));
@@ -319,8 +339,11 @@ bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
 		if (currNode->idx == toIdx) { // termination condition
 			do {
 				path.push(milestones[currNode->idx]);
+				std::cout << "index: " << (int)currNode->idx << std::endl;
 				currNode = &nodes[currNode->parentIdx];
 			} while (currNode->parentIdx != -1);
+			ROS_INFO("FOUND");
+			return true;
 		}
 		for (unsigned int j = 0; j < numMilestones; j++) {
 			if (ad_grid[currNode->idx][j]) {
@@ -339,6 +362,7 @@ bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
 			}
 		}
 	}
+	ROS_INFO("DIDN'T FIND");
 	return false;
 }
 
@@ -352,7 +376,12 @@ void init_vectors() {
 	milestones.clear();
 	wayPoints.clear();
 	while (!path.empty()) path.pop();
-
+	ROS_INFO("IN INIT_VECTOR");
+	for(int i = 0; i < numMilestones; i++) {
+		for (int j = 0; j < numMilestones; j++) {
+			ad_grid[i][j] = false;
+		}
+	}
 	// For simulation - insert waypoints
 #ifdef SIMULATION
 	Point p1; p1.x = 4.0; p1.y = 0.0; p1.z = 0.0;
@@ -442,16 +471,12 @@ int main(int argc, char **argv)
 	}
 	ROS_INFO("Receieved initial pose!");
 
-	milestones.push_back(startPoint);
-
-	ROS_INFO("Initial waypoints and milestones updated!");
-
     //Setup topics to Publish from this node
 
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
 		ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
     line_pub = n.advertise<visualization_msgs::Marker>("visualization_line", 1, true);
-
+    path_pub = n.advertise<visualization_msgs::Marker>("visualization_path", 1, true);
     //Velocity control variable
     geometry_msgs::Twist vel;
 
@@ -459,7 +484,18 @@ int main(int argc, char **argv)
     	init_vectors();
 		gen_milestones();			// updates milestones global vector
 		gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
-    } while (find_shortest_path(0, 1));
+    } while (!find_shortest_path(0, 1) /*||*/ /*!find_shortest_path(1, 2)*/ /*|| !find_shortest_path(2, 3)*/);
+    ROS_INFO("DONE!");
+    std::cout << "size of path: " << path.size() << std::endl;
+    vector<Point> path_lines;
+    path_lines.push_back(path.top());
+    path.pop();
+    while (!path.empty()) {
+    	path_lines.push_back(path.top());
+    	if (path.size() > 1) path_lines.push_back(path.top());
+    	path.pop();
+    }
+    drawPath(path_lines);
 
 	Point dest;
 	dest.x = 0.0;
@@ -468,7 +504,7 @@ int main(int argc, char **argv)
     while (ros::ok()) {
     	loop_rate.sleep(); //Maintain the loop rate
     	ros::spinOnce();   //Check for new messages	
-		navigate(dest,velocity_publisher);
+		// navigate(dest,velocity_publisher);
     }
     return 0;
 }
