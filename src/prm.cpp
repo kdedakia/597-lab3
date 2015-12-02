@@ -360,6 +360,7 @@ bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
 				std::cout << "index: " << (int)currNode->idx << std::endl;
 				currNode = &nodes[currNode->parentIdx];
 			} while (currNode->parentIdx != -1);
+			path.push(milestones[currNode->idx]);
 			ROS_INFO("FOUND");
 			return true;
 		}
@@ -447,19 +448,19 @@ bool navigate(Point dest,ros::Publisher velocity_publisher) {
 	geometry_msgs::Twist vel;
 
 	// std::cout << "CURR: " << currPoint.x << " | " << currPoint.y << " | " << currPoint.z << std::endl;
-	std::cout <<"CURRENT POSE: ("<< currPoint.x << " , " << currPoint.y << ") DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
+	//std::cout <<"CURRENT POSE: ("<< currPoint.x << " , " << currPoint.y << ") DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
 
 	if (delta_dist > distThreshold) {
 		delta_dist = dist(currPoint,dest);
 		delta_angle = get_angle(dest);
 
 		if(delta_angle > angleThreshold) {
-			std::cout << "ROTATE: " << delta_angle << std::endl;
+			//std::cout << "ROTATE: " << delta_angle << std::endl;
 			vel.linear.x = 0.0;
 			vel.angular.z = 0.3; // rotate CW
     	velocity_publisher.publish(vel);
 		} else {
-			std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
+			//std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
 			vel.linear.x = 0.1; // move forward
     	vel.angular.z = 0.02*delta_angle;
     	velocity_publisher.publish(vel);
