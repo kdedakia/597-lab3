@@ -42,7 +42,7 @@ vector<Point> wayPoints;
 vector<Point> path;
 
 int8_t getGridVal(uint8_t x, uint8_t y) {
-	return gMap[(y*10)*COLS + x*10];
+	return gMap[y*COLS + x];
 }
 
 // Used to display milestones & samples on RVIZ
@@ -94,14 +94,21 @@ double dist(Point p1,Point p2) {
 // 	std::cout << map << std::endl;
 // }
 
+double actualX(int x) {
+	return ((double)x/10) - 1.0;
+}
+
+double actualY(int y) {
+	return ((double)y/10) - 5.0;
+}
+
 // Generate an array of milestones, display on RVIZ
 void gen_milestones() {	
 	while (milestones.size() < numMilestones) {
 		int x = rand() % COLS;
 		int y = rand() % ROWS;
-		int z = 0;
 		if (getGridVal(x,y) < obsThreshold) {
-			Point p; p.x = (double)x; p.y = (double)y; p.z = (double)z;
+			Point p; p.x = actualX(x); p.y = actualY(y); p.z = 0.0;
 			milestones.push_back(p);
 		}
 	}
