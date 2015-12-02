@@ -339,9 +339,9 @@ bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
 		if (currNode->idx == toIdx) { // termination condition
 			do {
 				path.push(milestones[currNode->idx]);
-				std::cout << "index: " << (int)currNode->idx << std::endl;
 				currNode = &nodes[currNode->parentIdx];
 			} while (currNode->parentIdx != -1);
+			path.push(milestones[currNode->idx]);
 			ROS_INFO("FOUND");
 			return true;
 		}
@@ -484,9 +484,9 @@ int main(int argc, char **argv)
     	init_vectors();
 		gen_milestones();			// updates milestones global vector
 		gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
-    } while (!find_shortest_path(0, 1) /*||*/ /*!find_shortest_path(1, 2)*/ /*|| !find_shortest_path(2, 3)*/);
+    } while (!find_shortest_path(0, 1) || !find_shortest_path(1, 2) || !find_shortest_path(2, 3));
     ROS_INFO("DONE!");
-    std::cout << "size of path: " << path.size() << std::endl;
+    // std::cout << "size of path: " << path.size() << std::endl;
     vector<Point> path_lines;
     path_lines.push_back(path.top());
     path.pop();
