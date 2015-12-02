@@ -23,6 +23,7 @@ using geometry_msgs::PoseWithCovarianceStamped;
 using std::vector;
 
 ros::Publisher marker_pub;
+ros::Publisher line_pub;
 
 #define SIMULATION // change this to live if necessary
 
@@ -30,7 +31,7 @@ ros::Publisher marker_pub;
 #define COLS 100
 #define ROWS 100
 #define numMilestones 95 //Number of Samples
-#define nhDistance 3.0 //Neighborhood Distance
+#define nhDistance 2.0 //Neighborhood Distance
 #define obsThreshold 50
 
 vector<int8_t> gMap;
@@ -63,24 +64,23 @@ void draw_points(vector<Point> points_vector) {
 	marker_pub.publish(points);
 }
 
-void drawLineSegment(int k, Point start_point, Point end_point)
+void drawLineSegments(vector<Point> lines_vector)
 {
    visualization_msgs::Marker lines;
    lines.header.frame_id = "/map";
-   lines.id = k; //each curve must have a unique id or you will overwrite an old ones
-   lines.type = visualization_msgs::Marker::LINE_STRIP;
+   lines.id = 0; //each curve must have a unique id or you will overwrite an old ones
+   lines.type = visualization_msgs::Marker::LINE_LIST;
    lines.action = visualization_msgs::Marker::ADD;
    lines.ns = "line_segments";
-   lines.scale.x = 0.1;
+   lines.scale.x = 0.04;
    lines.color.r = 1.0;
-   lines.color.b = 0.2*k;
+   lines.color.b = 0.2;
    lines.color.a = 1.0;
 
-   lines.points.push_back(start_point);
-   lines.points.push_back(end_point);
+   lines.points = lines_vector;
 
    //publish new line segment
-   marker_pub.publish(lines);
+   line_pub.publish(lines);
 }
 
 // Euclidian Distance between 2 points
@@ -142,22 +142,26 @@ bool isFeasible (Point node1, Point node2){
 	int x1 = indexX(node2.x);
 	int y1 = indexY(node2.y);
 	bresenham (x0,y0,x1,y1,x,y);
-	//std::cout << "Node 1 x:" << x0 << "y: " << y0 << " Node 2 x:" << x1 << "y:" << y1 << std::endl;
+	int radius = 2;
 	for (int i =0; i < x.size(); i ++){
-		std::cout << "Grid val: " << (int)getGridVal(x.at(i),y.at(i)) << std::endl;
-		if (getGridVal(x.at(i),y.at(i)) > obsThreshold){
-			return false;
+		for (int j = 0; j <= radius; j++){
+			if (getGridVal(x.at(i),y.at(i)-j) > obsThreshold ||
+				getGridVal(x.at(i),y.at(i)+j) > obsThreshold ||
+				getGridVal(x.at(i)+j,y.at(i)) > obsThreshold ||
+				getGridVal(x.at(i)-j,y.at(i)) > obsThreshold ||
+				getGridVal(x.at(i)-j,y.at(i)-j) > obsThreshold ||
+				getGridVal(x.at(i)+j,y.at(i)+j) > obsThreshold){
+				return false;
+			}
 		}
-
 	}
-	//drawLineSegment(1,node1, node2);
 	return true;
 }
 
 // Generate the graph connections for each milestone
 // TODO: ensure milestones array passed in is correct
 void gen_connections()
-{	int id = 0;
+{	vector<Point> lines_vector;
 	for(int i = 0; i < numMilestones; i++) {
 		for (int j = 0; j < numMilestones; j++) {
 			float d = dist(milestones[i],milestones[j]);
@@ -167,11 +171,12 @@ void gen_connections()
 				isFeasible(milestones[i], milestones[j])) {
 				ad_grid[i][j] = true;
 				ad_grid[j][i] = true;
-				drawLineSegment(id, milestones[i], milestones[j]);
-				id++;
+				lines_vector.push_back(milestones[i]);
+				lines_vector.push_back(milestones[j]);
 			}
 		}
 	}
+	drawLineSegments(lines_vector);
 }
 
 double actualX(int x) {
@@ -325,6 +330,7 @@ int main(int argc, char **argv)
     //Setup topics to Publish from this node
     ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
+    line_pub = n.advertise<visualization_msgs::Marker>("visualization_line", 1, true);
 
     //Velocity control variable
     geometry_msgs::Twist vel;
