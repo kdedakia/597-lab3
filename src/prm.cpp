@@ -22,6 +22,7 @@ using geometry_msgs::Point;
 using geometry_msgs::PoseWithCovarianceStamped;
 using std::vector;
 
+
 ros::Publisher marker_pub;
 
 #define SIMULATION // change this to live if necessary
@@ -32,6 +33,9 @@ ros::Publisher marker_pub;
 #define numMilestones 95 //Number of Samples
 #define nhDistance 10.0 //Neighborhood Distance
 #define obsThreshold 50
+#define angleThreshold 10
+#define distThreshold 2
+
 
 vector<int8_t> gMap;
 bool initial_pose_found = false;
@@ -40,6 +44,7 @@ Point startPoint;
 Point currPoint;
 vector<Point> wayPoints;
 vector<Point> path;
+
 
 int8_t getGridVal(uint8_t x, uint8_t y) {
 	return gMap[y*COLS + x];
@@ -103,7 +108,7 @@ double actualY(int y) {
 }
 
 // Generate an array of milestones, display on RVIZ
-void gen_milestones() {	
+void gen_milestones() {
 	while (milestones.size() < numMilestones) {
 		int x = rand() % COLS;
 		int y = rand() % ROWS;
@@ -128,6 +133,9 @@ void pose_callback(const PoseWithCovarianceStamped &msg)
 		startPoint.z = Yaw;
 	}
 	initial_pose_found = true;
+	currPoint.x = X;
+	currPoint.y = Y;
+	currPoint.z = Yaw;
 	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
 
@@ -239,11 +247,54 @@ void init_vectors() {
 #endif
 }
 
+float get_angle(Point dest) {
+	float x1 = cos(currPoint.z);
+	float y1 = sin(currPoint.z);
+	float x2 = dest.x - currPoint.x;
+	float y2 = dest.y - currPoint.y;
+	float dot = x1*x2 + y1*y2;
+	float det = x1*y2 - y1*x2;
+	return fabs(atan2(det, dot) * 180 / 3.14);
+}
+
+bool navigate(Point dest,ros::Publisher velocity_publisher) {
+	float delta_angle = get_angle(dest);
+	float delta_dist = dist(currPoint,dest);
+
+	geometry_msgs::Twist vel;
+
+	std::cout << "DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
+
+	if (delta_dist > distThreshold) {
+		delta_dist = dist(currPoint,dest);
+		delta_angle = get_angle(dest);
+
+		if(delta_angle > angleThreshold) {
+			std::cout << "ROTATE: " << delta_angle << std::endl;
+			vel.linear.x = 0.0;
+			vel.angular.z = 0.3; // rotate CW
+    	velocity_publisher.publish(vel);
+		} else {
+			std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
+			vel.linear.x = 0.1; // move forward
+    	vel.angular.z = 0.0;
+    	velocity_publisher.publish(vel);
+		}
+	} else {
+		vel.linear.x = 0.0; // stop
+		vel.angular.z = 0.0;
+		velocity_publisher.publish(vel);
+		return true;
+	}
+
+}
+
 int main(int argc, char **argv)
 {
 	//Initialize the ROS framework
     ros::init(argc,argv,"main_control");
-    ros::NodeHandle n;
+		ros::NodeHandle n;
+
     srand(time(NULL));
     init_map();
     //Subscribe to the desired topics and assign callbacks
@@ -263,8 +314,9 @@ int main(int argc, char **argv)
 	ROS_INFO("Initial waypoints and milestones updated!");
 
     //Setup topics to Publish from this node
-    ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
+
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
+		ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
 
     //Velocity control variable
     geometry_msgs::Twist vel;
@@ -274,16 +326,16 @@ int main(int argc, char **argv)
 		gen_milestones();			// updates milestones global vector
 		// gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
     } while (find_shortest_path());
-	
+
+		Point dest;
+		dest.x = 0.311;
+		dest.y = -5.3;
+
     while (ros::ok()) {
     	loop_rate.sleep(); //Maintain the loop rate
     	ros::spinOnce();   //Check for new messages
 
-    	//Main loop code goes here:
-    	vel.linear.x = 0.1; // set linear speed
-    	vel.angular.z = 0.3; // set angular speed
-
-    	velocity_publisher.publish(vel); // Publish the command velocity
+			// navigate(dest,velocity_publisher);
     }
     return 0;
 }
