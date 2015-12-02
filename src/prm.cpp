@@ -24,6 +24,7 @@ using std::vector;
 
 
 ros::Publisher marker_pub;
+ros::Publisher line_pub;
 
 #define SIMULATION // change this to live if necessary
 
@@ -31,13 +32,14 @@ ros::Publisher marker_pub;
 #define COLS 100
 #define ROWS 100
 #define numMilestones 95 //Number of Samples
-#define nhDistance 10.0 //Neighborhood Distance
+#define nhDistance 2.0 //Neighborhood Distance
 #define obsThreshold 50
 #define angleThreshold 10
 #define distThreshold 2
 
 
 vector<int8_t> gMap;
+bool ad_grid[numMilestones][numMilestones] = {false};
 bool initial_pose_found = false;
 vector<Point> milestones;
 Point startPoint;
@@ -67,37 +69,120 @@ void draw_points(vector<Point> points_vector) {
 	marker_pub.publish(points);
 }
 
+void drawLineSegments(vector<Point> lines_vector)
+{
+   visualization_msgs::Marker lines;
+   lines.header.frame_id = "/map";
+   lines.id = 0; //each curve must have a unique id or you will overwrite an old ones
+   lines.type = visualization_msgs::Marker::LINE_LIST;
+   lines.action = visualization_msgs::Marker::ADD;
+   lines.ns = "line_segments";
+   lines.scale.x = 0.04;
+   lines.color.r = 1.0;
+   lines.color.b = 0.2;
+   lines.color.a = 1.0;
+
+   lines.points = lines_vector;
+
+   //publish new line segment
+   line_pub.publish(lines);
+}
+
 // Euclidian Distance between 2 points
 double dist(Point p1,Point p2) {
 	return pow(pow(p2.x - p1.x,2) + pow(p2.y - p1.y,2), 0.5);
 }
 
+int indexX(double x){
+ return (x + 1) * 10;
+}
+
+int indexY(double y){
+ return (y + 5) * 10;
+}
+
+short sgn(int x) { return x >= 0 ? 1 : -1; }
+
+void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y) {
+
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int dx2 = x1 - x0;
+    int dy2 = y1 - y0;
+
+    const bool s = abs(dy) > abs(dx);
+
+    if (s) {
+        int dx2 = dx;
+        dx = dy;
+        dy = dx2;
+    }
+
+    int inc1 = 2 * dy;
+    int d = inc1 - dx;
+    int inc2 = d - dx;
+
+    x.push_back(x0);
+    y.push_back(y0);
+
+    while (x0 != x1 || y0 != y1) {
+        if (s) y0+=sgn(dy2); else x0+=sgn(dx2);
+        if (d < 0) d += inc1;
+        else {
+            d += inc2;
+            if (s) x0+=sgn(dx2); else y0+=sgn(dy2);
+        }
+
+        //Add point to vector
+        x.push_back(x0);
+        y.push_back(y0);
+    }
+}
+
+bool isFeasible (Point node1, Point node2){
+	vector<int> x;
+	vector<int> y;
+	int x0 = indexX(node1.x);
+	int y0 = indexY(node1.y);
+	int x1 = indexX(node2.x);
+	int y1 = indexY(node2.y);
+	bresenham (x0,y0,x1,y1,x,y);
+	int radius = 2;
+	for (int i =0; i < x.size(); i ++){
+		for (int j = 0; j <= radius; j++){
+			if (getGridVal(x.at(i),y.at(i)-j) > obsThreshold ||
+				getGridVal(x.at(i),y.at(i)+j) > obsThreshold ||
+				getGridVal(x.at(i)+j,y.at(i)) > obsThreshold ||
+				getGridVal(x.at(i)-j,y.at(i)) > obsThreshold ||
+				getGridVal(x.at(i)-j,y.at(i)-j) > obsThreshold ||
+				getGridVal(x.at(i)+j,y.at(i)+j) > obsThreshold){
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 // Generate the graph connections for each milestone
 // TODO: ensure milestones array passed in is correct
-// void gen_connections(Point points[])
-// {
-// 	int mS = 3;
-// 	// TODO: don't hardcode the size? Doesn't compile if a var is passed in...
-// 	Matrix<int, 3, 3> map;
-// 	map.fill(0);
-
-// 	for(int i = 0; i < mS; i++) {
-// 		double norms[mS];
-// 		std::cout << points[i].x << std::endl;
-
-// 		for (int j = 0; j < mS; j++) {
-// 			// Set neighbors based on proximity
-// 			double d = dist(points[i],points[j]);
-// 			if ( i != j && d > 0.0  && d < nhDistance) {
-// 				// TODO: collision check before adding edge
-// 				map(i,j) = 1;
-// 				map(j,i) = 1;
-// 			}
-// 		}
-// 	}
-
-// 	std::cout << map << std::endl;
-// }
+void gen_connections()
+{	vector<Point> lines_vector;
+	for(int i = 0; i < numMilestones; i++) {
+		for (int j = 0; j < numMilestones; j++) {
+			float d = dist(milestones[i],milestones[j]);
+			if (i != j &&
+				d > 0.0 &&
+				d < nhDistance &&
+				isFeasible(milestones[i], milestones[j])) {
+				ad_grid[i][j] = true;
+				ad_grid[j][i] = true;
+				lines_vector.push_back(milestones[i]);
+				lines_vector.push_back(milestones[j]);
+			}
+		}
+	}
+	drawLineSegments(lines_vector);
+}
 
 double actualX(int x) {
 	return ((double)x/10) - 1.0;
@@ -176,26 +261,6 @@ void drawCurve(int k)
    //publish new curve
    marker_pub.publish(lines);
 
-}
-
-void drawLineSegment(int k, Point start_point, Point end_point)
-{
-   visualization_msgs::Marker lines;
-   lines.header.frame_id = "/map";
-   lines.id = k; //each curve must have a unique id or you will overwrite an old ones
-   lines.type = visualization_msgs::Marker::LINE_STRIP;
-   lines.action = visualization_msgs::Marker::ADD;
-   lines.ns = "line_segments";
-   lines.scale.x = 0.1;
-   lines.color.r = 1.0;
-   lines.color.b = 0.2*k;
-   lines.color.a = 1.0;
-
-   lines.points.push_back(start_point);
-   lines.points.push_back(end_point);
-
-   //publish new line segment
-   marker_pub.publish(lines);
 }
 
 //Callback function for the map
@@ -317,6 +382,7 @@ int main(int argc, char **argv)
 
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
 		ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
+    line_pub = n.advertise<visualization_msgs::Marker>("visualization_line", 1, true);
 
     //Velocity control variable
     geometry_msgs::Twist vel;
@@ -324,7 +390,7 @@ int main(int argc, char **argv)
     do {
     	init_vectors();
 		gen_milestones();			// updates milestones global vector
-		// gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
+		gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
     } while (find_shortest_path());
 
 		Point dest;
