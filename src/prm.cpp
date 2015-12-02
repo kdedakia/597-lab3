@@ -16,11 +16,16 @@
 #include <Eigen/Dense>
 #include <math.h>
 #include <vector>
+#include <list>
+#include <stack>
+#include <algorithm>
 
 using namespace Eigen;
 using geometry_msgs::Point;
 using geometry_msgs::PoseWithCovarianceStamped;
 using std::vector;
+using std::list;
+using std::stack;
 
 
 ros::Publisher marker_pub;
@@ -45,7 +50,7 @@ vector<Point> milestones;
 Point startPoint;
 Point currPoint;
 vector<Point> wayPoints;
-vector<Point> path;
+stack<Point> path;
 
 
 int8_t getGridVal(uint8_t x, uint8_t y) {
@@ -192,12 +197,24 @@ double actualY(int y) {
 	return ((double)y/10) - 5.0;
 }
 
+bool obstacleCloseby(int x, int y) {
+	for (int i = -2; i < 3; i++) {
+		for (int j = -2; j < 3; j++) {
+			int newX = x+i, newY = y+j;
+			if (newX >= 0 && newX < 100 && newY >= 0 && newY < 100) {
+				if (getGridVal(newX,newY) > obsThreshold) return true;
+			}
+		}
+	}
+	return false;
+}
+
 // Generate an array of milestones, display on RVIZ
 void gen_milestones() {
 	while (milestones.size() < numMilestones) {
 		int x = rand() % COLS;
 		int y = rand() % ROWS;
-		if (getGridVal(x,y) < obsThreshold) {
+		if (!obstacleCloseby(x,y)) {
 			Point p; p.x = actualX(x); p.y = actualY(y); p.z = 0.0;
 			milestones.push_back(p);
 		}
@@ -268,8 +285,60 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 	gMap = msg.data;
 }
 
-bool find_shortest_path() {
-	// TODO
+struct MapNode {
+	int8_t idx, parentIdx;
+	double h, d; // h - heuristic (distance to goal) // d - total distance travelled to reach node
+	bool closed;
+	MapNode(int8_t idx, uint16_t h) : idx(idx), parentIdx(-1), h(h), d(0), closed(false) {}
+};
+
+bool compare(MapNode *node1, MapNode *node2) {
+	return (node1->h + node1->d) < (node2->h + node2->d);
+}
+
+bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
+	vector<MapNode> nodes;
+	for (unsigned int i = 0; i < numMilestones; i++) {
+		nodes.push_back(MapNode(i, dist(milestones[i], milestones[toIdx])));
+	}
+	list<MapNode*> openList;
+	list<MapNode*> closedList;
+
+	MapNode *currNode = &nodes[startIdx];
+	currNode->d = 0;
+	openList.push_back(currNode);
+
+	while(!openList.empty()) { // A* search
+
+		openList.sort(compare);
+		currNode = openList.front();
+		openList.pop_front();
+		currNode->closed = true;
+		closedList.push_back(currNode);
+
+		if (currNode->idx == toIdx) { // termination condition
+			do {
+				path.push(milestones[currNode->idx]);
+				currNode = &nodes[currNode->parentIdx];
+			} while (currNode->parentIdx != -1);
+		}
+		for (unsigned int j = 0; j < numMilestones; j++) {
+			if (ad_grid[currNode->idx][j]) {
+				if (nodes[j].closed) continue;
+				double disToNewNode = dist(milestones[currNode->idx], milestones[j]);
+				double totalDistanceTravelled = currNode->d + disToNewNode;
+				if (find(openList.begin(), openList.end(), currNode) != openList.end()) { // found in open set
+					if (totalDistanceTravelled < nodes[j].d) {
+						nodes[j].parentIdx = currNode->idx;
+						nodes[j].d = totalDistanceTravelled;
+					}
+				} else { // not found in open set
+					nodes[j].parentIdx = currNode->idx;
+					openList.push_back(&nodes[j]);
+				}
+			}
+		}
+	}
 	return false;
 }
 
@@ -282,7 +351,7 @@ void init_map() {
 void init_vectors() {
 	milestones.clear();
 	wayPoints.clear();
-	path.clear();
+	while (!path.empty()) path.pop();
 
 	// For simulation - insert waypoints
 #ifdef SIMULATION
@@ -292,6 +361,7 @@ void init_vectors() {
 	wayPoints.push_back(p1);
 	wayPoints.push_back(p2);
 	wayPoints.push_back(p3);
+	milestones.push_back(startPoint);
 	milestones.push_back(p1);
 	milestones.push_back(p2);
 	milestones.push_back(p3);
@@ -305,6 +375,7 @@ void init_vectors() {
 	wayPoints.push_back(p2);
 	wayPoints.push_back(p3);
 	wayPoints.push_back(p4);
+	milestones.push_back(startPoint);
 	milestones.push_back(p1);
 	milestones.push_back(p2);
 	milestones.push_back(p3);
@@ -328,19 +399,16 @@ bool navigate(Point dest,ros::Publisher velocity_publisher) {
 
 	geometry_msgs::Twist vel;
 
-	std::cout << "DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
 
 	if (delta_dist > distThreshold) {
 		delta_dist = dist(currPoint,dest);
 		delta_angle = get_angle(dest);
 
 		if(delta_angle > angleThreshold) {
-			std::cout << "ROTATE: " << delta_angle << std::endl;
 			vel.linear.x = 0.0;
 			vel.angular.z = 0.3; // rotate CW
     	velocity_publisher.publish(vel);
 		} else {
-			std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
 			vel.linear.x = 0.1; // move forward
     	vel.angular.z = 0.0;
     	velocity_publisher.publish(vel);
@@ -374,7 +442,7 @@ int main(int argc, char **argv)
 	}
 	ROS_INFO("Receieved initial pose!");
 
-	wayPoints.push_back(startPoint);
+	milestones.push_back(startPoint);
 
 	ROS_INFO("Initial waypoints and milestones updated!");
 
@@ -391,17 +459,16 @@ int main(int argc, char **argv)
     	init_vectors();
 		gen_milestones();			// updates milestones global vector
 		gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
-    } while (find_shortest_path());
+    } while (find_shortest_path(0, 1));
 
-		Point dest;
-		dest.x = 0.0;
-		dest.y = -5.3;
+	Point dest;
+	dest.x = 0.0;
+	dest.y = -5.3;
 
     while (ros::ok()) {
     	loop_rate.sleep(); //Maintain the loop rate
-    	ros::spinOnce();   //Check for new messages
-
-			navigate(dest,velocity_publisher);
+    	ros::spinOnce();   //Check for new messages	
+		navigate(dest,velocity_publisher);
     }
     return 0;
 }
