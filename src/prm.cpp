@@ -35,16 +35,25 @@ ros::Publisher line_pub;
 ros::Publisher path_pub;
 ros::Publisher actual_pub;
 
-#define SIMULATION // change this to live if necessary
+#define LIVE // change this to live if necessary
 
 #define TAGID 0
+#ifdef SIMULATION
 #define COLS 100
 #define ROWS 100
-#define numMilestones 100 //Number of Samples
+#else
+#define COLS 70
+#define ROWS 70
+#define resolution 0.086 // meters per cell
+#endif
+#define numMilestones 300 //Number of Samples
 #define nhDistance 2.0 //Neighborhood Distance
 #define obsThreshold 50
-#define angleThreshold 1
-#define distThreshold 0.25
+#define angleThreshold 5
+#define distThreshold 0.15
+
+#define IPS_TO_METERS 2.2   // convert IPS readings to meters
+#define PI 3.14159
 
 
 vector<int8_t> gMap;
@@ -54,7 +63,6 @@ vector<Point> milestones;
 vector<Point> robotPosition;
 Point startPoint;
 Point currPoint;
-vector<Point> wayPoints;
 stack<Point> path;
 vector<Point> path_lines;
 
@@ -71,8 +79,8 @@ void draw_points(vector<Point> points_vector) {
 	points.pose.orientation.w = 1.0;
 	points.id = 0;
 	points.type = visualization_msgs::Marker::POINTS;
-	points.scale.x = 0.2;
-	points.scale.y = 0.2;
+	points.scale.x = 0.05;
+	points.scale.y = 0.05;
 	points.color.g = 1.0f;
 	points.color.a = 1.0;
 	points.points = points_vector;
@@ -87,8 +95,8 @@ void draw_robotPos(vector<Point> points_vector) {
 	points.pose.orientation.w = 1.0;
 	points.id = 0;
 	points.type = visualization_msgs::Marker::POINTS;
-	points.scale.x = 0.2;
-	points.scale.y = 0.2;
+	points.scale.x = 0.09;
+	points.scale.y = 0.09;
 	points.color.b = 1.0f;
 	points.color.a = 1.0;
 	points.points = points_vector;
@@ -141,11 +149,19 @@ double dist(Point p1,Point p2) {
 }
 
 int indexX(double x){
- return (x + 1) * 10;
+	#ifdef LIVE
+ 	return (int)((x + 3.0) * (1/resolution));
+ 	#else
+ 	return (x + 1) * 10;
+ 	#endif
 }
 
 int indexY(double y){
- return (y + 5) * 10;
+	#ifdef LIVE
+ 	return (int)((y + 3.0) * (1/resolution));
+ 	#else
+ 	return (y + 5) * 10;
+ 	#endif
 }
 
 short sgn(int x) { return x >= 0 ? 1 : -1; }
@@ -232,11 +248,19 @@ void gen_connections()
 }
 
 double actualX(int x) {
+	#ifdef LIVE
+	return ((double)x*resolution - 3.0);
+	#else
 	return ((double)x/10) - 1.0;
+	#endif
 }
 
 double actualY(int y) {
+	#ifdef LIVE
+	return ((double)y*resolution - 3.0);
+	#else
 	return ((double)y/10) - 5.0;
+	#endif
 }
 
 bool obstacleCloseby(int x, int y) {
@@ -271,6 +295,14 @@ void pose_callback(const PoseWithCovarianceStamped &msg)
 	double X = msg.pose.pose.position.x; // Robot X psotition
 	double Y = msg.pose.pose.position.y; // Robot Y psotition
  	double Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+#ifdef LIVE
+    X = IPS_TO_METERS*msg.pose.pose.position.x; // Robot X position
+    Y = -IPS_TO_METERS*msg.pose.pose.position.y; // Robot Y position
+    Yaw = -1*tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+    if (Yaw < 0) {
+        Yaw = 2*PI + Yaw;
+    }
+#endif
 	if (!initial_pose_found) {
 		startPoint.x = X;
 		startPoint.y = Y;
@@ -328,10 +360,10 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 }
 
 struct MapNode {
-	int8_t idx, parentIdx;
+	int idx, parentIdx;
 	double h, d; // h - heuristic (distance to goal) // d - total distance travelled to reach node
 	bool closed;
-	MapNode(int8_t idx, uint16_t h) : idx(idx), parentIdx(-1), h(h), d(0), closed(false) {}
+	MapNode(int idx, uint16_t h) : idx(idx), parentIdx(-1), h(h), d(0), closed(false) {}
 };
 
 bool compare(MapNode *node1, MapNode *node2) {
@@ -339,7 +371,6 @@ bool compare(MapNode *node1, MapNode *node2) {
 }
 
 bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
-	ROS_INFO("FINDING SHORTEST PATH");
 	vector<MapNode> nodes;
 	for (unsigned int i = 0; i < numMilestones; i++) {
 		nodes.push_back(MapNode(i, dist(milestones[i], milestones[toIdx])));
@@ -369,8 +400,7 @@ bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
 				path_lines.push_back(path.top());
 				path.pop();
 			}
-			ROS_INFO("FOUND");
-
+			ROS_INFO("FOUND IT!");
 			return true;
 		}
 		for (unsigned int j = 0; j < numMilestones; j++) {
@@ -390,7 +420,7 @@ bool find_shortest_path(int8_t startIdx, int8_t toIdx) {
 			}
 		}
 	}
-	ROS_INFO("DIDN'T FIND");
+	ROS_INFO("FAILED TO FIND IT");
 	return false;
 }
 
@@ -402,9 +432,7 @@ void init_map() {
 
 void init_vectors() {
 	milestones.clear();
-	wayPoints.clear();
 	while (!path.empty()) path.pop();
-	ROS_INFO("IN INIT_VECTOR");
 	for(int i = 0; i < numMilestones; i++) {
 		for (int j = 0; j < numMilestones; j++) {
 			ad_grid[i][j] = false;
@@ -415,28 +443,19 @@ void init_vectors() {
 	Point p1; p1.x = 4.0; p1.y = 0.0; p1.z = 0.0;
 	Point p2; p2.x = 8.0; p2.y = -4.0; p2.z = 3.14;
 	Point p3; p3.x = 8.0; p3.y = 0.0; p3.z = -1.57;
-	wayPoints.push_back(p1);
-	wayPoints.push_back(p2);
-	wayPoints.push_back(p3);
 	milestones.push_back(startPoint);
 	milestones.push_back(p1);
 	milestones.push_back(p2);
 	milestones.push_back(p3);
 #else
 	// For live
-	Point p1; p1.x = 5.0; p1.y = 5.0; p1.z = 0.0;
-	Point p2; p2.x = 1.0; p2.y = 0.0; p2.z = 3.14;
-	Point p3; p3.x = 1.5; p3.y = 4.5; p3.z = -1.57;
-	Point p4; p4.x = 3.0; p4.y = 0.5; p4.z = 1.57;
-	wayPoints.push_back(p1);
-	wayPoints.push_back(p2);
-	wayPoints.push_back(p3);
-	wayPoints.push_back(p4);
+	Point p1; p1.x = 1.45; p1.y = -2.23; p1.z = 0.0;
+	Point p2; p2.x = 0.08; p2.y = 0.6; p2.z = 3.14;
+	Point p3; p3.x = -1.72; p3.y = 0.43; p3.z = -1.57;
 	milestones.push_back(startPoint);
 	milestones.push_back(p1);
 	milestones.push_back(p2);
 	milestones.push_back(p3);
-	milestones.push_back(p4);
 #endif
 }
 
@@ -454,30 +473,31 @@ bool navigate(Point dest,ros::Publisher velocity_publisher) {
 	float delta_angle = get_angle(dest);
 	float delta_dist = dist(currPoint,dest);
 
-	geometry_msgs::Twist vel;
+	geometry_msgs::Twist vel; 
 
-	// std::cout << "CURR: " << currPoint.x << " | " << currPoint.y << " | " << currPoint.z << std::endl;
 	// std::cout <<"CURRENT POSE: ("<< currPoint.x << " , " << currPoint.y << ") DELTA DIST: " << delta_dist << " DELTA ANGLE: " << delta_angle << std::endl;
-
+	// std::cout <<"CURRENT POSE: ("<< currPoint.x << " , " << currPoint.y << ") dest.x: " << dest.x << " dest.y: " << dest.y << " yaw: " << currPoint.z << std::endl;
 	if (delta_dist > distThreshold) {
-		delta_dist = dist(currPoint,dest);
+		delta_dist = dist(currPoint,dest);	
 		delta_angle = get_angle(dest);
 
 		if(delta_angle > angleThreshold) {
 			// std::cout << "ROTATE: " << delta_angle << std::endl;
 			vel.linear.x = 0.0;
-			vel.angular.z = 0.3; // rotate CW
+			vel.angular.z = 0.1; // rotate CW
     	velocity_publisher.publish(vel);
 		} else {
 			// std::cout << "FORWARD:" << delta_dist << " | " << delta_angle << std::endl;
 			vel.linear.x = 0.1; // move forward
-    	vel.angular.z = 0.02*delta_angle;
+    		vel.angular.z = 0.01*delta_angle;
     	velocity_publisher.publish(vel);
 		}
 	} else {
 		vel.linear.x = 0.0; // stop
 		vel.angular.z = 0.0;
 		velocity_publisher.publish(vel);
+		ROS_INFO("REACHED DESTINATION");
+		std::cout << "dest.x: " << dest.x << " dest.y: " << dest.y << std::endl;
 		return true;
 	}
 
@@ -518,28 +538,24 @@ int main(int argc, char **argv)
 		gen_milestones();			// updates milestones global vector
 		gen_connections(); 			// updates global Matrix of size numMilestones x numMilestones
     } while (!find_shortest_path(0, 1) || !find_shortest_path(1, 2) || !find_shortest_path(2, 3));
-    ROS_INFO("DONE!");
+
     // std::cout << "size of path: " << path.size() << std::endl;
     vector<Point> actual_path_lines;
-    // path_lines.push_back(path.top());
-    // path.pop();
-    // while (!path.empty()) {
-    // 	path_lines.push_back(path.top());
-    // 	if (path.size() > 1) path_lines.push_back(path.top());
-    // 	path.pop();
-    // }
 	actual_path_lines.push_back(path_lines[0]);
     for (unsigned int i = 1; i < path_lines.size(); i++) {
     	actual_path_lines.push_back(path_lines[i]);
     	if (i != path_lines.size()-1) actual_path_lines.push_back(path_lines[i]);
+ 		std::cout << "point x: " << path_lines[i].x << " y: " << path_lines[i].y << std::endl;
+    }
+    for (unsigned int i = 0; i < actual_path_lines.size(); i++) {
+
+ 		std::cout << "point x: " << actual_path_lines[i].x << " y: " << actual_path_lines[i].y << std::endl;
     }
     drawPath(actual_path_lines);
-    ROS_INFO("DREW!");	
 
 	Point dest;
 	dest.x = 0.0;
 	dest.y = -5.3;
-
 
 	int i = 0;
     while (ros::ok()) {
@@ -547,14 +563,10 @@ int main(int argc, char **argv)
     	ros::spinOnce();   //Check for new messages
 
 		if (navigate(actual_path_lines.at(i),velocity_publisher)){
-			if (i < actual_path_lines.size()){
+			if (i < actual_path_lines.size() - 1){
 				i++;				
 			}
 		}
-	
-		// robot_pose.push_back(currPoint);
-		// points.points = robot_pose;
-        // actual_pub.publish(points);
 		robotPosition.push_back(currPoint);
 		draw_robotPos(robotPosition);
     }
